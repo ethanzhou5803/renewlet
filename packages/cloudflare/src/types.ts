@@ -84,7 +84,18 @@ export interface SubscriptionRow {
   repeat_reminder_enabled: number;
   repeat_reminder_interval: string;
   repeat_reminder_window: string;
+  cost_sharing_json?: string;
   extra_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 每用户调度 gate；Cron 先读这里，空状态下不再触碰 subscriptions 候选查询。 */
+export interface SubscriptionSchedulerStateRow {
+  user_id: string;
+  auto_renew_count: number;
+  repeat_reminder_count: number;
+  last_auto_renew_local_date: string;
   created_at: string;
   updated_at: string;
 }

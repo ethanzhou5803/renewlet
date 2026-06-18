@@ -111,6 +111,29 @@ func registerRecordHooks(app core.App) {
 		}
 		return e.Next()
 	})
+	app.OnRecordAfterCreateSuccess("subscriptions").BindFunc(func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		return refreshSubscriptionSchedulerStateAfterWrite(app, e.Record)
+	})
+	app.OnRecordAfterUpdateSuccess("subscriptions").BindFunc(func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		return refreshSubscriptionSchedulerStateAfterWrite(app, e.Record)
+	})
+	app.OnRecordAfterDeleteSuccess("subscriptions").BindFunc(func(e *core.RecordEvent) error {
+		if err := e.Next(); err != nil {
+			return err
+		}
+		return refreshSubscriptionSchedulerStateAfterWrite(app, e.Record)
+	})
+}
+
+func refreshSubscriptionSchedulerStateAfterWrite(app core.App, record *core.Record) error {
+	_, err := refreshSubscriptionSchedulerState(app, record.GetString("user"), true)
+	return err
 }
 
 func normalizeCloudBackupTargetRecord(record *core.Record) error {
@@ -322,6 +345,12 @@ func normalizeSubscriptionRecord(record *core.Record) error {
 		return err
 	}
 	record.Set("tags", tags)
+
+	costSharing, err := normalizeCostSharing(record.Get("costSharing"), price, currency)
+	if err != nil {
+		return err
+	}
+	record.Set("costSharing", costSharing)
 
 	if record.Get("extra") == nil || strings.TrimSpace(record.GetString("extra")) == "" {
 		// 统一空 JSON 为 `{}`，避免前端 schema 在 null/空字符串之间做额外兼容。
