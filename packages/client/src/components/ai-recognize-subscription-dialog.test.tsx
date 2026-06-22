@@ -147,6 +147,23 @@ describe("AIRecognizeSubscriptionDialog", () => {
     Reflect.deleteProperty(window, "matchMedia");
   });
 
+  it("requires explicit controls to close the workflow dialog", async () => {
+    const user = userEvent.setup();
+    const { onOpenChange } = renderDialog();
+
+    await user.keyboard("{Escape}");
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+
+    const overlay = document.querySelector("[data-dialog-overlay]");
+    if (!overlay) throw new Error("Dialog overlay was not rendered");
+    await user.click(overlay);
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "取消" }));
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("输入阶段不渲染草稿列表和导入预览", () => {
     renderDialog();
 
@@ -418,8 +435,8 @@ describe("AIRecognizeSubscriptionDialog", () => {
       throw new Error("AI draft date buttons were not rendered");
     }
     expect(startDateButton).toHaveAttribute("aria-invalid", "true");
-    expect(startDateButton).toHaveAttribute("aria-describedby", "ai-draft-1-dates-error");
-    expect(startDateButton.parentElement).toHaveTextContent("请选择开始日期和续费或到期日期。");
+    expect(startDateButton).toHaveAttribute("aria-describedby", "ai-draft-1-startDate-error");
+    expect(startDateButton.closest('[data-slot="form-field-row"]')).toHaveTextContent("请选择开始日期和续费或到期日期。");
     const autoCalculateHelp = screen.getByText("根据开始日期和扣费周期自动计算");
     expect(nextBillingDateButton).toHaveAttribute("aria-invalid", "false");
     expect(nextBillingDateButton).toHaveAttribute("aria-describedby", autoCalculateHelp.id);

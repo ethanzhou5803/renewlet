@@ -9,10 +9,9 @@ import { type FormEvent, useRef, useState } from "react";
 import Link from '@/components/router-link';
 import { ArrowLeft, CheckCircle2, Mail, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FieldError } from "@/components/ui/field-error";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RenewletLogo } from "@/components/icons/renewlet-logo";
+import { RenewletBrandLockup } from "@/components/brand/renewlet-brand-mark";
 import { getDisplayErrorMessage } from "@/lib/display-error";
 import { toast } from "@/components/ui/sonner";
 import { authClient } from "@/lib/auth-client";
@@ -67,15 +66,11 @@ export function ForgotPasswordClient({ enabled }: ForgotPasswordClientProps) {
     <div className="auth-page theme-gradient">
       <div className="w-full max-w-md">
         <div className="rounded-2xl border border-border bg-card p-6 shadow-card grid gap-6 sm:p-8">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#111720] text-[#f8fafc] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_32px_-22px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
-              <RenewletLogo className="h-6 w-6" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-foreground">{t("passwordReset.forgotTitle")}</h1>
-              <p className="text-xs text-muted-foreground">{t("passwordReset.forgotSubtitle")}</p>
-            </div>
-          </div>
+          <RenewletBrandLockup
+            title={t("passwordReset.forgotTitle")}
+            subtitle={t("passwordReset.forgotSubtitle")}
+            titleClassName="text-xl"
+          />
 
           {!enabled ? (
             <div className="rounded-lg border border-border bg-secondary/50 p-4 text-sm text-muted-foreground">
@@ -91,13 +86,21 @@ export function ForgotPasswordClient({ enabled }: ForgotPasswordClientProps) {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="grid gap-4" noValidate>
-              <div className="grid gap-2">
-                <Label htmlFor="forgot-email">{t("auth.email")}</Label>
+              <FormField
+                id="forgot-email"
+                label={t("auth.email")}
+                description={t("passwordReset.emailHelp")}
+                descriptionId="forgot-email-description"
+                error={emailError}
+                errorId="forgot-email-error"
+              >
+                {(field) => (
+                  <>
                 <div className="relative">
                   <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     ref={emailInputRef}
-                    id="forgot-email"
+                    id={field.id}
                     name="email"
                     type="email"
                     inputMode="email"
@@ -111,16 +114,14 @@ export function ForgotPasswordClient({ enabled }: ForgotPasswordClientProps) {
                     enterKeyHint="done"
                     autoCapitalize="none"
                     spellCheck={false}
-                    aria-invalid={Boolean(emailError)}
-                    aria-describedby={emailError ? "forgot-email-error" : "forgot-email-description"}
+                    aria-invalid={field.invalid}
+                    aria-describedby={field.describedBy}
                     required
                   />
                 </div>
-                <p id="forgot-email-description" className="text-xs text-muted-foreground">
-                  {t("passwordReset.emailHelp")}
-                </p>
-                <FieldError id="forgot-email-error" message={emailError} />
-              </div>
+                  </>
+                )}
+              </FormField>
 
               <Button
                 type="submit"

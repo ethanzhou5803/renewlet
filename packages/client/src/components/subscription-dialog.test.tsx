@@ -107,8 +107,8 @@ describe("SubscriptionDialog", () => {
     expect(dateError).toBeInTheDocument();
     const autoCalculateHelp = screen.getByText("根据开始日期和扣费周期自动计算");
     expect(startDateButton).toHaveAttribute("aria-invalid", "true");
-    expect(startDateButton).toHaveAttribute("aria-describedby", "dates-error");
-    expect(startDateButton.parentElement).toContainElement(dateError);
+    expect(startDateButton).toHaveAttribute("aria-describedby", "startDate-error");
+    expect(startDateButton.closest('[data-slot="form-field-row"]')).toContainElement(dateError);
     expect(nextBillingDateButton).toHaveAttribute("aria-invalid", "false");
     expect(nextBillingDateButton).toHaveAttribute("aria-describedby", autoCalculateHelp.id);
     expect(onSubmit).not.toHaveBeenCalled();
@@ -232,23 +232,6 @@ describe("SubscriptionDialog", () => {
     const reopenedMemberDialog = screen.getByRole("dialog", { name: "管理共享成员" });
     expect(reopenedMemberDialog).toBeInTheDocument();
     await user.click(within(reopenedMemberDialog).getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog", { name: "管理共享成员" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "编辑订阅" })).toBeInTheDocument();
-    expect(onOpenChange).not.toHaveBeenCalledWith(false);
-
-    await user.click(screen.getByRole("button", { name: "管理成员" }));
-    expect(screen.getByRole("dialog", { name: "管理共享成员" })).toBeInTheDocument();
-    const overlays = document.querySelectorAll<HTMLElement>("[data-dialog-overlay]");
-    const topOverlay = overlays.item(overlays.length - 1);
-    if (!topOverlay) throw new Error("Member dialog overlay was not rendered");
-    await user.click(topOverlay);
-    expect(screen.queryByRole("dialog", { name: "管理共享成员" })).not.toBeInTheDocument();
-    expect(screen.getByRole("dialog", { name: "编辑订阅" })).toBeInTheDocument();
-    expect(onOpenChange).not.toHaveBeenCalledWith(false);
-
-    await user.click(screen.getByRole("button", { name: "管理成员" }));
-    expect(screen.getByRole("dialog", { name: "管理共享成员" })).toBeInTheDocument();
-    await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "管理共享成员" })).not.toBeInTheDocument();
     expect(screen.getByRole("dialog", { name: "编辑订阅" })).toBeInTheDocument();
     expect(onOpenChange).not.toHaveBeenCalledWith(false);

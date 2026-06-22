@@ -40,6 +40,10 @@ func servePocketBaseTestRequest(t *testing.T, app core.App, method string, targe
 }
 
 func serveTestRequest(t *testing.T, app core.App, method string, target string, body string, token string) *httptest.ResponseRecorder {
+	return serveTestRequestWithHeaders(t, app, method, target, body, token, nil)
+}
+
+func serveTestRequestWithHeaders(t *testing.T, app core.App, method string, target string, body string, token string, headers map[string]string) *httptest.ResponseRecorder {
 	t.Helper()
 	router, err := apis.NewRouter(app)
 	if err != nil {
@@ -55,6 +59,9 @@ func serveTestRequest(t *testing.T, app core.App, method string, target string, 
 	req.Header.Set("content-type", "application/json")
 	if token != "" {
 		req.Header.Set("Authorization", token)
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
 	}
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, req)
@@ -102,6 +109,19 @@ func serveMultipartTestRequest(t *testing.T, app core.App, target string, token 
 }
 
 func createRouteTestUser(t *testing.T, app core.App, role string) (*core.Record, string) {
+	t.Helper()
+	user, err := createUser(app, "Admin", "admin-"+role+"@example.com", "password123", role)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, _, err := createAppSession(app, user.Id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return user, "Bearer " + token
+}
+
+func createRouteTestUserWithPocketBaseToken(t *testing.T, app core.App, role string) (*core.Record, string) {
 	t.Helper()
 	user, err := createUser(app, "Admin", "admin-"+role+"@example.com", "password123", role)
 	if err != nil {
@@ -304,6 +324,27 @@ func TestSetupRouteHonorsSetupEnabledAndCreatedStatus(t *testing.T) {
 	}
 }
 
+func TestSetupRouteCreatesInitialSettingsFromRequestLocale(t *testing.T) {
+	app := newSchemaTestApp(t)
+	if err := ensureSchema(app); err != nil {
+		t.Fatal(err)
+	}
+
+	res := serveTestRequestWithHeaders(t, app, http.MethodPost, "/api/app/setup", `{"name":"Admin","email":"admin@example.com","password":"password123"}`, "", map[string]string{
+		"X-Renewlet-Locale": "zh-CN",
+	})
+	if res.Code != http.StatusCreated {
+		t.Fatalf("expected setup create status 201, got %d: %s", res.Code, res.Body.String())
+	}
+	admin, err := app.FindAuthRecordByEmail("users", "admin@example.com")
+	if err != nil {
+		t.Fatalf("expected setup admin user: %v", err)
+	}
+	if got := settingsRecordLocale(t, app, admin.Id); got != string(localeZhCN) {
+		t.Fatalf("expected setup settings locale zh-CN, got %q", got)
+	}
+}
+
 func TestSetupRouteDoesNotOverwriteExistingSuperuser(t *testing.T) {
 	app := newSchemaTestApp(t)
 	if err := ensureSchema(app); err != nil {
@@ -337,7 +378,7 @@ func TestAssetsCollectionCreateAcceptsSvgUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	registerRecordHooks(app)
-	user, token := createRouteTestUser(t, app, "authenticated")
+	user, token := createRouteTestUserWithPocketBaseToken(t, app, "authenticated")
 
 	res := serveMultipartTestRequest(
 		t,
@@ -373,7 +414,7 @@ func TestAssetsCollectionCreateAcceptsIcoUpload(t *testing.T) {
 		t.Fatal(err)
 	}
 	registerRecordHooks(app)
-	user, token := createRouteTestUser(t, app, "authenticated")
+	user, token := createRouteTestUserWithPocketBaseToken(t, app, "authenticated")
 
 	res := serveMultipartTestRequest(
 		t,
@@ -409,7 +450,7 @@ func TestSubscriptionsCollectionCreateAcceptsPrivateAssetLogoPath(t *testing.T) 
 		t.Fatal(err)
 	}
 	registerRecordHooks(app)
-	user, token := createRouteTestUser(t, app, "authenticated")
+	user, token := createRouteTestUserWithPocketBaseToken(t, app, "authenticated")
 
 	uploadRes := serveMultipartTestRequest(
 		t,
@@ -485,7 +526,7 @@ func TestSubscriptionsCollectionCreateValidatesLogoURLContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	registerRecordHooks(app)
-	user, token := createRouteTestUser(t, app, "logo-url")
+	user, token := createRouteTestUserWithPocketBaseToken(t, app, "logo-url")
 
 	createBody := func(logo string) string {
 		return fmt.Sprintf(`{
@@ -686,7 +727,7 @@ func TestBannedUserCannotRefreshOrUseExistingPocketBaseToken(t *testing.T) {
 	if err := ensureSchema(app); err != nil {
 		t.Fatal(err)
 	}
-	user, token := createRouteTestUser(t, app, "user")
+	user, token := createRouteTestUserWithPocketBaseToken(t, app, "user")
 	subscriptions, err := app.FindCollectionByNameOrId("subscriptions")
 	if err != nil {
 		t.Fatal(err)

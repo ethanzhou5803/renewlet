@@ -16,14 +16,18 @@ import (
 )
 
 type userDTO struct {
-	ID        string  `json:"id"`
-	Name      string  `json:"name"`
-	Email     string  `json:"email"`
-	Role      string  `json:"role"`
-	Banned    bool    `json:"banned"`
-	BanReason *string `json:"banReason,omitempty"`
-	CreatedAt string  `json:"createdAt"`
-	UpdatedAt string  `json:"updatedAt"`
+	ID              string   `json:"id"`
+	Name            string   `json:"name"`
+	Email           string   `json:"email"`
+	Role            string   `json:"role"`
+	Banned          bool     `json:"banned"`
+	MFAEnabled      bool     `json:"mfaEnabled"`
+	MFAMethods      []string `json:"mfaMethods"`
+	PasskeysEnabled bool     `json:"passkeysEnabled"`
+	PasskeyCount    int      `json:"passkeyCount"`
+	BanReason       *string  `json:"banReason,omitempty"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
 }
 
 var errSetupAlreadyInitialized = errors.New("SETUP_ALREADY_INITIALIZED")
@@ -46,14 +50,19 @@ func normalizeRole(role string) string {
 	return "user"
 }
 
-// createInitialAdmin 在事务内创建首个管理员和 PocketBase superuser。
+// createInitialAdmin 在事务内创建首个管理员、账号设置和 PocketBase superuser。
 // 事务用于避免并发 setup 请求同时通过 hasEnabledAdmin 检查。
-func createInitialAdmin(app core.App, name string, email string, password string) error {
+func createInitialAdmin(app core.App, name string, email string, password string, locale appLocale) error {
 	return app.RunInTransaction(func(txApp core.App) error {
 		if hasEnabledAdmin(txApp) {
 			return errSetupAlreadyInitialized
 		}
-		if _, err := createUser(txApp, name, email, password, "admin"); err != nil {
+		user, err := createUser(txApp, name, email, password, "admin")
+		if err != nil {
+			return err
+		}
+		// setup 同步创建 settings，避免首个通知/备份后台任务先看到空账号语言。
+		if _, err := createSettingsRecord(txApp, user.Id, defaultAppSettingsForLocale(locale)); err != nil {
 			return err
 		}
 		return createInitialSuperuserIfMissing(txApp, email, password)
@@ -184,19 +193,25 @@ func localizeAdminMutationError(locale appLocale, err error) string {
 
 // toUserDTO 将 PocketBase 用户记录转换为前端可见 DTO。
 // 注意： 不要在 DTO 中暴露认证内部字段或密码相关状态。
-func toUserDTO(user *core.Record) userDTO {
+func toUserDTO(app core.App, user *core.Record) userDTO {
 	var banReason *string
 	if reason := strings.TrimSpace(user.GetString("banReason")); reason != "" {
 		banReason = &reason
 	}
+	mfaEnabled, mfaMethods, _ := authenticatorMfaEnabledForUser(app, user.Id)
+	passkeyCount, _ := passkeyCredentialCount(app, user.Id)
 	return userDTO{
-		ID:        user.Id,
-		Name:      user.GetString("name"),
-		Email:     user.Email(),
-		Role:      normalizeRole(user.GetString("role")),
-		Banned:    user.GetBool("banned"),
-		BanReason: banReason,
-		CreatedAt: user.GetDateTime("created").String(),
-		UpdatedAt: user.GetDateTime("updated").String(),
+		ID:              user.Id,
+		Name:            user.GetString("name"),
+		Email:           user.Email(),
+		Role:            normalizeRole(user.GetString("role")),
+		Banned:          user.GetBool("banned"),
+		MFAEnabled:      mfaEnabled,
+		MFAMethods:      mfaMethods,
+		PasskeysEnabled: passkeyCount > 0,
+		PasskeyCount:    passkeyCount,
+		BanReason:       banReason,
+		CreatedAt:       user.GetDateTime("created").String(),
+		UpdatedAt:       user.GetDateTime("updated").String(),
 	}
 }

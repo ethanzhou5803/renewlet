@@ -38,7 +38,7 @@ import {
 } from "./db";
 import { requireAuth } from "./auth";
 import { HttpError, json, readJson, requestLocale, type AppLocale } from "./http";
-import { serverText } from "./server-i18n";
+import { DEFAULT_SERVER_I18N_LOCALE, serverText } from "./server-i18n";
 import { createStoredZip } from "./zip-store";
 import {
   CloudBackupRemoteError,
@@ -333,7 +333,7 @@ export async function runDueCloudBackups(env: Env, now = new Date()): Promise<vo
 }
 
 function requestLocaleFromDefault(): AppLocale {
-  return "zh-CN";
+  return DEFAULT_SERVER_I18N_LOCALE;
 }
 
 async function configuredCloudBackupTargets(env: Env, userId: string, locale: AppLocale): Promise<{
@@ -619,6 +619,7 @@ async function buildCloudBackupExportZip(env: Env, userId: string): Promise<{ co
     }
     exportSubscriptions.push(subscription);
   }
+  // 云备份使用业务恢复 allowlist 组包；sessions/MFA/passkey/tickets 和 R2 系统密钥对象都不进入 ZIP。
   const payload = renewletExportV1Schema.parse({
     kind: "renewlet-export",
     schemaVersion: 1,

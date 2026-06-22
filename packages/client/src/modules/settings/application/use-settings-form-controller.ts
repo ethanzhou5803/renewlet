@@ -65,6 +65,14 @@ import {
   type SettingsPublicStatusPageController,
 } from "./use-public-status-page-settings-controller";
 import {
+  usePublicApiSettingsController,
+  type SettingsPublicApiController,
+} from "./use-public-api-settings-controller";
+import {
+  useTelegramBotCommandsController,
+  type SettingsTelegramBotCommandsController,
+} from "./use-telegram-bot-commands-controller";
+import {
   useSettingsBuiltInIconIndexController,
   type SettingsBuiltInIconIndexController,
 } from "./use-built-in-icon-index-controller";
@@ -152,9 +160,13 @@ export interface SettingsFormController {
   calendarFeed: SettingsCalendarFeedController;
   builtInIconIndex: SettingsBuiltInIconIndexController;
   publicStatusPage: SettingsPublicStatusPageController;
+  publicApi: SettingsPublicApiController;
+  telegramBotCommands: SettingsTelegramBotCommandsController;
   password: PasswordChangeController;
   passwordResetEnabled: boolean;
   externalIntegrationsDisabled: boolean;
+  sensitiveAccountActionsDisabled: boolean;
+  sensitiveAccountActionsDemoDisabled: boolean;
 }
 
 /**
@@ -194,6 +206,9 @@ export function useSettingsFormController(): SettingsFormController {
   const { t, setLocale } = useI18n();
   const appStatus = useSetupStatus();
   const externalIntegrationsDisabled = appStatus.isLoading || appStatus.demoMode;
+  // demo 模式同时禁用外部集成和账号安全写操作；这里拆成两个语义，避免后续把密码/MFA/Passkey 误归到外部集成策略里。
+  const sensitiveAccountActionsDisabled = appStatus.isLoading || appStatus.demoMode;
+  const sensitiveAccountActionsDemoDisabled = appStatus.demoMode;
   const password = usePasswordChange();
   const passwordResetEnabled = usePasswordResetAvailability();
   const notificationTest = useNotificationTest(settings);
@@ -214,6 +229,13 @@ export function useSettingsFormController(): SettingsFormController {
     [subscriptionsQuery.data],
   );
   const publicStatusPage = usePublicStatusPageSettingsController(subscriptionsQuery.data);
+  const publicApi = usePublicApiSettingsController();
+  const telegramBotCommands = useTelegramBotCommandsController({
+    settings,
+    savedSettings,
+    externalIntegrationsDisabled,
+  });
+  const { refetch: refetchTelegramBotCommands } = telegramBotCommands;
 
   const monthlyBudgetInputDirty = monthlyBudgetInput !== String(settings.monthlyBudget);
   const settingsDirty = useMemo(
@@ -370,7 +392,7 @@ export function useSettingsFormController(): SettingsFormController {
   );
 
   const syncSavedPreviewState = useCallback(
-    (nextSettings: AppSettings, options: { syncAppearance: boolean }) => {
+    (nextSettings: AppSettings, options: { syncAppearance: boolean; rememberLocalePreference?: boolean }) => {
       if (options.syncAppearance) {
         clearThemeModeOverride();
         setTheme(nextSettings.themeMode, { localOverride: false });
@@ -379,7 +401,11 @@ export function useSettingsFormController(): SettingsFormController {
         writeCustomThemeColorToStorage(nextSettings.themeCustomColor);
         clearSettingsAppearanceDraftFromStorage();
       }
-      setLocale(nextSettings.locale, { persist: false, markAsSaved: true });
+      setLocale(nextSettings.locale, {
+        persist: false,
+        markAsSaved: true,
+        ...(options.rememberLocalePreference ? { rememberPreference: true } : {}),
+      });
     },
     [setLocale, setTheme],
   );
@@ -399,6 +425,7 @@ export function useSettingsFormController(): SettingsFormController {
     const shouldSaveSettings = settingsDirty;
     const shouldSaveCustomConfig = customConfigDirty;
     const providerChanged = settings.exchangeRateProvider !== savedSettings.exchangeRateProvider;
+    const localeChanged = settings.locale !== savedSettings.locale;
     const appearanceChanged = settings.themeMode !== savedSettings.themeMode
       || settings.themeVariant !== savedSettings.themeVariant
       || !areJsonSnapshotsEqual(settings.themeCustomColor, savedSettings.themeCustomColor);
@@ -426,8 +453,10 @@ export function useSettingsFormController(): SettingsFormController {
         setSettings(saved);
         setMonthlyBudgetInput(String(saved.monthlyBudget));
         setMonthlyBudgetError(null);
-        syncSavedPreviewState(saved, { syncAppearance: appearanceChanged });
+        syncSavedPreviewState(saved, { syncAppearance: appearanceChanged, rememberLocalePreference: localeChanged });
         void refetchNotificationHistory();
+        // Bot 命令安装状态读取的是已保存凭据；保存 token/chat 后要主动刷新，不能等低频 query 自然过期。
+        void refetchTelegramBotCommands();
         if (providerChanged) {
           try {
             await refreshRates(saved.exchangeRateProvider);
@@ -485,6 +514,7 @@ export function useSettingsFormController(): SettingsFormController {
     refreshRates,
     saveConfig,
     savedSettings.exchangeRateProvider,
+    savedSettings.locale,
     savedSettings.themeCustomColor,
     savedSettings.themeMode,
     savedSettings.themeVariant,
@@ -492,6 +522,7 @@ export function useSettingsFormController(): SettingsFormController {
     settingsDirty,
     syncSavedPreviewState,
     t,
+    refetchTelegramBotCommands,
     toast,
     updateSettings,
   ]);
@@ -716,8 +747,12 @@ export function useSettingsFormController(): SettingsFormController {
     },
     builtInIconIndex,
     publicStatusPage,
+    publicApi,
+    telegramBotCommands,
     password,
     passwordResetEnabled,
     externalIntegrationsDisabled,
+    sensitiveAccountActionsDisabled,
+    sensitiveAccountActionsDemoDisabled,
   };
 }

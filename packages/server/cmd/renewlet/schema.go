@@ -84,6 +84,15 @@ func ensureSchema(app core.App) error {
 	if err := ensurePublicStatusPagesCollection(app, users); err != nil {
 		return err
 	}
+	if err := ensureAPITokensCollection(app, users); err != nil {
+		return err
+	}
+	if err := ensureAuthMFACollections(app, users); err != nil {
+		return err
+	}
+	if err := ensureTelegramBotBindingsCollection(app, users); err != nil {
+		return err
+	}
 	if err := ensureCloudBackupTargetsCollection(app, users); err != nil {
 		return err
 	}
@@ -93,7 +102,7 @@ func ensureSchema(app core.App) error {
 	if err := migrateLegacyCloudBackupConfigs(app); err != nil {
 		return err
 	}
-	if err := backfillAutodates(app, "subscriptions", "subscription_scheduler_states", "settings", "custom_configs", "assets", "notification_jobs", "calendar_feeds", "public_status_pages", "cloud_backup_targets", "media_icon_indexes"); err != nil {
+	if err := backfillAutodates(app, "subscriptions", "subscription_scheduler_states", "settings", "custom_configs", "assets", "notification_jobs", "calendar_feeds", "public_status_pages", "api_tokens", "app_sessions", "mfa_totp_credentials", "mfa_recovery_codes", "mfa_auth_tickets", "passkey_credentials", "passkey_challenges", "telegram_bot_bindings", "cloud_backup_targets", "media_icon_indexes"); err != nil {
 		return err
 	}
 	if err := backfillSubscriptionSchedulerStates(app); err != nil {

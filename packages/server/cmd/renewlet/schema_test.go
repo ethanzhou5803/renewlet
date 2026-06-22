@@ -131,6 +131,82 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 		"created":    core.FieldTypeAutodate,
 		"updated":    core.FieldTypeAutodate,
 	})
+	assertFields(t, app, "api_tokens", map[string]string{
+		"user":        core.FieldTypeRelation,
+		"name":        core.FieldTypeText,
+		"tokenHash":   core.FieldTypeText,
+		"tokenPrefix": core.FieldTypeText,
+		"scopes":      core.FieldTypeJSON,
+		"lastUsedAt":  core.FieldTypeText,
+		"created":     core.FieldTypeAutodate,
+		"updated":     core.FieldTypeAutodate,
+	})
+	assertMissingField(t, app, "api_tokens", "revokedAt")
+	assertFields(t, app, "app_sessions", map[string]string{
+		"user":       core.FieldTypeRelation,
+		"tokenHash":  core.FieldTypeText,
+		"expiresAt":  core.FieldTypeText,
+		"lastSeenAt": core.FieldTypeText,
+		"created":    core.FieldTypeAutodate,
+		"updated":    core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "mfa_totp_credentials", map[string]string{
+		"user":             core.FieldTypeRelation,
+		"secretCiphertext": core.FieldTypeText,
+		"lastAcceptedStep": core.FieldTypeNumber,
+		"created":          core.FieldTypeAutodate,
+		"updated":          core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "mfa_recovery_codes", map[string]string{
+		"user":     core.FieldTypeRelation,
+		"codeHash": core.FieldTypeText,
+		"usedAt":   core.FieldTypeText,
+		"created":  core.FieldTypeAutodate,
+		"updated":  core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "mfa_auth_tickets", map[string]string{
+		"user":              core.FieldTypeRelation,
+		"ticketHash":        core.FieldTypeText,
+		"expiresAt":         core.FieldTypeText,
+		"attempts":          core.FieldTypeNumber,
+		"methods":           core.FieldTypeJSON,
+		"payloadCiphertext": core.FieldTypeText,
+		"created":           core.FieldTypeAutodate,
+		"updated":           core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "passkey_credentials", map[string]string{
+		"user":           core.FieldTypeRelation,
+		"name":           core.FieldTypeText,
+		"credentialId":   core.FieldTypeText,
+		"publicKey":      core.FieldTypeText,
+		"credentialJson": core.FieldTypeText,
+		"counter":        core.FieldTypeNumber,
+		"transports":     core.FieldTypeJSON,
+		"created":        core.FieldTypeAutodate,
+		"updated":        core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "passkey_challenges", map[string]string{
+		"user":            core.FieldTypeRelation,
+		"challengeIdHash": core.FieldTypeText,
+		"kind":            core.FieldTypeSelect,
+		"challenge":       core.FieldTypeText,
+		"sessionDataJson": core.FieldTypeText,
+		"expiresAt":       core.FieldTypeText,
+		"created":         core.FieldTypeAutodate,
+		"updated":         core.FieldTypeAutodate,
+	})
+	assertFields(t, app, "telegram_bot_bindings", map[string]string{
+		"user":              core.FieldTypeRelation,
+		"chatId":            core.FieldTypeText,
+		"botTokenHash":      core.FieldTypeText,
+		"webhookSecretHash": core.FieldTypeText,
+		"status":            core.FieldTypeSelect,
+		"lastUpdateId":      core.FieldTypeNumber,
+		"lastUsedAt":        core.FieldTypeText,
+		"created":           core.FieldTypeAutodate,
+		"updated":           core.FieldTypeAutodate,
+	})
+	assertSelectFieldValues(t, app, "telegram_bot_bindings", "status", "installing", "installed")
 
 	assertIndex(t, app, "subscriptions", "idx_subscriptions_user")
 	assertIndex(t, app, "subscriptions", "idx_subscriptions_user_logo")
@@ -153,6 +229,23 @@ func TestEnsureSchemaCreatesContractFieldsAndIndexes(t *testing.T) {
 	assertIndex(t, app, "calendar_feeds", "idx_calendar_feeds_user_subscription_unique")
 	assertIndex(t, app, "public_status_pages", "idx_public_status_pages_user_unique")
 	assertIndex(t, app, "public_status_pages", "idx_public_status_pages_token_unique")
+	assertIndex(t, app, "api_tokens", "idx_api_tokens_user_created")
+	assertIndex(t, app, "api_tokens", "idx_api_tokens_token_hash_unique")
+	assertMissingIndex(t, app, "api_tokens", "idx_api_tokens_user_revoked")
+	assertIndex(t, app, "app_sessions", "idx_app_sessions_token_hash_unique")
+	assertIndex(t, app, "app_sessions", "idx_app_sessions_user")
+	assertIndex(t, app, "app_sessions", "idx_app_sessions_expires")
+	assertIndex(t, app, "mfa_totp_credentials", "idx_mfa_totp_user_unique")
+	assertIndex(t, app, "mfa_recovery_codes", "idx_mfa_recovery_user_hash_unique")
+	assertIndex(t, app, "mfa_recovery_codes", "idx_mfa_recovery_user_used")
+	assertIndex(t, app, "mfa_auth_tickets", "idx_mfa_tickets_hash_unique")
+	assertIndex(t, app, "mfa_auth_tickets", "idx_mfa_tickets_user_expires")
+	assertIndex(t, app, "passkey_credentials", "idx_passkeys_credential_unique")
+	assertIndex(t, app, "passkey_credentials", "idx_passkeys_user")
+	assertIndex(t, app, "passkey_challenges", "idx_passkey_challenge_unique")
+	assertIndex(t, app, "passkey_challenges", "idx_passkey_challenge_user_kind")
+	assertIndex(t, app, "telegram_bot_bindings", "idx_telegram_bot_bindings_user_unique")
+	assertIndex(t, app, "telegram_bot_bindings", "idx_telegram_bot_bindings_webhook_secret")
 }
 
 func TestEnsureSchemaSelfHealsExistingCollectionsWithoutAutodates(t *testing.T) {
@@ -498,6 +591,17 @@ func assertFields(t *testing.T, app core.App, collectionName string, fields map[
 	}
 }
 
+func assertMissingField(t *testing.T, app core.App, collectionName string, fieldName string) {
+	t.Helper()
+	collection, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if field := collection.Fields.GetByName(fieldName); field != nil {
+		t.Fatalf("collection %s field %s should not exist, got %s", collectionName, fieldName, field.Type())
+	}
+}
+
 func assertFileFieldMimeTypes(t *testing.T, app core.App, collectionName string, fieldName string, expected ...string) {
 	t.Helper()
 	collection, err := app.FindCollectionByNameOrId(collectionName)
@@ -534,6 +638,19 @@ func assertIndex(t *testing.T, app core.App, collectionName string, indexName st
 		}
 	}
 	t.Fatalf("collection %s is missing index %s", collectionName, indexName)
+}
+
+func assertMissingIndex(t *testing.T, app core.App, collectionName string, indexName string) {
+	t.Helper()
+	collection, err := app.FindCollectionByNameOrId(collectionName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, index := range collection.Indexes {
+		if strings.Contains(index, "`"+indexName+"`") {
+			t.Fatalf("collection %s index %s should not exist: %#v", collectionName, indexName, collection.Indexes)
+		}
+	}
 }
 
 func assertIndexDefinition(t *testing.T, app core.App, collectionName string, indexName string, columns string) {

@@ -7,7 +7,7 @@ import { DISABLED_REMINDER_DAYS, MAX_REMINDER_DAYS } from "@renewlet/shared/runt
 import type { AdminUser } from "@renewlet/shared/schemas/admin";
 import type { AssetInUseDetails } from "@renewlet/shared/schemas/media";
 import type { z } from "zod";
-import type { AssetRow, Env, NotificationJobRow, SubscriptionRow, UserRow } from "./types";
+import type { ApiTokenRow, AssetRow, Env, NotificationJobRow, SubscriptionRow, TelegramBotBindingRow, UserRow } from "./types";
 
 /**
  * D1 数据访问层只暴露 Renewlet 产品语义。
@@ -92,11 +92,39 @@ const notificationJobColumnNames = [
   "updated_at",
 ] as const;
 
+const apiTokenColumnNames = [
+  "id",
+  "user_id",
+  "name",
+  "token_hash",
+  "token_prefix",
+  "scopes_json",
+  "last_used_at",
+  "created_at",
+  "updated_at",
+] as const;
+
+const telegramBotBindingColumnNames = [
+  "id",
+  "user_id",
+  "chat_id",
+  "bot_token_hash",
+  "webhook_secret_hash",
+  "status",
+  "last_update_id",
+  "last_used_at",
+  "created_at",
+  "updated_at",
+] as const;
+
 export const USER_COLUMNS = userColumnNames.join(", ");
 export const USER_COLUMNS_FROM_USERS = userColumnNames.map((column) => `users.${column} AS ${column}`).join(", ");
 export const SUBSCRIPTION_COLUMNS = subscriptionColumnNames.join(", ");
 export const ASSET_COLUMNS = assetColumnNames.join(", ");
 export const NOTIFICATION_JOB_COLUMNS = notificationJobColumnNames.join(", ");
+export const API_TOKEN_COLUMNS = apiTokenColumnNames.join(", ");
+export const API_TOKEN_COLUMNS_FROM_API_TOKENS = apiTokenColumnNames.map((column) => `api_tokens.${column} AS ${column}`).join(", ");
+export const TELEGRAM_BOT_BINDING_COLUMNS = telegramBotBindingColumnNames.join(", ");
 
 /** Worker 统一使用 ISO instant；用户本地日期/时间只保存在业务字段中。 */
 export function nowIso(): string {
@@ -118,17 +146,40 @@ export function intToBool(value: number | null | undefined): boolean {
 }
 
 /** toAdminUser 是管理员用户管理响应的出站门，不能直接把 password_hash 等 D1 字段透给前端。 */
-export function toAdminUser(row: UserRow): AdminUser {
+export function toAdminUser(
+  row: UserRow,
+  mfa: Pick<AdminUser, "mfaEnabled" | "mfaMethods" | "passkeysEnabled" | "passkeyCount"> = {
+    mfaEnabled: false,
+    mfaMethods: [],
+    passkeysEnabled: false,
+    passkeyCount: 0,
+  },
+): AdminUser {
   return {
     id: row.id,
     email: row.email,
     name: row.name,
     role: row.role,
     banned: intToBool(row.banned),
+    mfaEnabled: mfa.mfaEnabled,
+    mfaMethods: mfa.mfaMethods,
+    passkeysEnabled: mfa.passkeysEnabled,
+    passkeyCount: mfa.passkeyCount,
     banReason: row.ban_reason || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+export async function listApiTokenRows(env: Env, userId: string): Promise<ApiTokenRow[]> {
+  const result = await env.DB.prepare(`SELECT ${API_TOKEN_COLUMNS} FROM api_tokens WHERE user_id = ? ORDER BY created_at DESC, id DESC LIMIT 200`)
+    .bind(userId)
+    .all<ApiTokenRow>();
+  return result.results;
+}
+
+export async function getTelegramBotBinding(env: Env, userId: string): Promise<TelegramBotBindingRow | null> {
+  return await env.DB.prepare(`SELECT ${TELEGRAM_BOT_BINDING_COLUMNS} FROM telegram_bot_bindings WHERE user_id = ? LIMIT 1`).bind(userId).first<TelegramBotBindingRow>();
 }
 
 /** email 查找在 SQL 层 lower 对齐，避免登录大小写差异制造重复账号语义。 */
@@ -159,12 +210,33 @@ export async function enabledAdminCount(env: Env): Promise<number> {
   return row?.count ?? 0;
 }
 
-/** getSettings 返回完整设置契约，调用方不需要知道 D1 中是否存在 settings 行。 */
+/** getSettings 只做后台/二级读取兜底；带请求 locale 的首次初始化必须走 ensureSettings。 */
 export async function getSettings(env: Env, userId: string): Promise<ApiAppSettings> {
   const row = await env.DB.prepare("SELECT settings_json FROM settings WHERE user_id = ? LIMIT 1").bind(userId).first<{ settings_json: string }>();
-  // 空库用户按当前 shared defaults 启动；不要写回 D1，否则首次访问会制造隐式迁移副作用。
+  // 后台任务没有可信请求语言，空库时只返回默认设置，不能替账号落语言。
   if (!row) return createDefaultAppSettings();
   return normalizeSettingsJson(row.settings_json);
+}
+
+/**
+ * ensureSettings 只用于带请求 locale 的首次账号初始化入口。
+ *
+ * 请求 header 只影响缺行时的初始 settings；已有 settings 是账号真相源，不能被浏览器语言或代理 header 覆盖。
+ */
+export async function ensureSettings(env: Env, userId: string, locale: ApiAppSettings["locale"]): Promise<ApiAppSettings> {
+  const existing = await env.DB.prepare("SELECT settings_json FROM settings WHERE user_id = ? LIMIT 1").bind(userId).first<{ settings_json: string }>();
+  if (existing) return normalizeSettingsJson(existing.settings_json);
+
+  const defaults = createDefaultAppSettings({ locale });
+  const timestamp = nowIso();
+  await env.DB.prepare(`
+    INSERT INTO settings (user_id, settings_json, created_at, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(user_id) DO NOTHING
+  `).bind(userId, JSON.stringify(defaults), timestamp, timestamp).run();
+
+  const stored = await env.DB.prepare("SELECT settings_json FROM settings WHERE user_id = ? LIMIT 1").bind(userId).first<{ settings_json: string }>();
+  return stored ? normalizeSettingsJson(stored.settings_json) : defaults;
 }
 
 /** 保存设置前重跑完整 shared schema，确保 D1 写入后的数据仍可被 Go/前端同一契约消费。 */
@@ -196,7 +268,7 @@ export function mergeSettingsPatch(current: ApiAppSettings, patch: ApiAppSetting
 
 export function normalizeSettingsJson(value: string): ApiAppSettings {
   try {
-    const parsed = JSON.parse(value) as unknown;
+    const parsed = normalizeStoredSettingsPatch(JSON.parse(value) as unknown);
     const result = settingsUpdateBodySchema.safeParse(parsed);
     if (result.success) {
       const defaults = createDefaultAppSettings();
@@ -207,6 +279,18 @@ export function normalizeSettingsJson(value: string): ApiAppSettings {
     // D1 里 settings_json 不是可信源；坏 JSON 只能回落默认值，不能拖垮整个 Worker。
   }
   return createDefaultAppSettings();
+}
+
+function normalizeStoredSettingsPatch(value: unknown): unknown {
+  if (!isRecord(value)) return value;
+  // 写入 API 仍严格拒绝非法值；读取坏库时只把 Telegram 样式降回 plain，不让整份 settings 掉默认。
+  const telegramMessageFormat = value["telegramMessageFormat"];
+  if (telegramMessageFormat === undefined || telegramMessageFormat === "plain" || telegramMessageFormat === "html") return value;
+  return { ...value, telegramMessageFormat: "plain" };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /** getCustomConfig 保留用户自定义文本原貌；产品内置标签翻译不在 Worker 里生成。 */

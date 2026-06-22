@@ -10,10 +10,9 @@ import { type FormEvent, useRef, useState } from "react";
 import { useRouter } from '@/lib/router';
 import { ArrowRight, Lock, Mail, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { FieldError } from "@/components/ui/field-error";
+import { FormField } from "@/components/ui/form-field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { RenewletLogo } from "@/components/icons/renewlet-logo";
+import { RenewletBrandLockup } from "@/components/brand/renewlet-brand-mark";
 import { toast } from "@/components/ui/sonner";
 import { apiFetch } from "@/lib/api-client";
 import { setupCreateResponseSchema } from "@/lib/api/schemas/app";
@@ -88,6 +87,7 @@ export default function SetupPage() {
     setErrors({});
     try {
       await apiFetch("/api/app/setup", setupCreateResponseSchema, {
+        authMode: "none",
         method: "POST",
         body: JSON.stringify({ name: trimmedName, email: trimmedEmail, password }),
       });
@@ -120,24 +120,22 @@ export default function SetupPage() {
   return (
     <div className="auth-page bg-background theme-gradient">
       <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 shadow-card sm:p-8">
-        <div className="mb-8 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#111720] text-[#f8fafc] shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_16px_32px_-22px_rgba(0,0,0,0.8)] ring-1 ring-white/10">
-            <RenewletLogo className="h-6 w-6" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold text-foreground">{t("setup.title")}</h1>
-            <p className="text-xs text-muted-foreground">{t("setup.subtitle")}</p>
-          </div>
-        </div>
+        <RenewletBrandLockup
+          title={t("setup.title")}
+          subtitle={t("setup.subtitle")}
+          className="mb-8"
+          titleClassName="text-xl"
+        />
 
         <form onSubmit={handleSubmit} className="grid gap-4" noValidate>
-          <div className="grid gap-2">
-            <Label htmlFor="email">{t("setup.loginEmail")}</Label>
+          <FormField id="email" label={t("setup.loginEmail")} error={errors.email} errorId="setup-email-error">
+            {(field) => (
+              <>
             <div className="relative">
               <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={emailInputRef}
-                id="email"
+                id={field.id}
                 name="email"
                 type="email"
                 inputMode="email"
@@ -151,21 +149,23 @@ export default function SetupPage() {
                 enterKeyHint="next"
                 autoCapitalize="none"
                 spellCheck={false}
-                aria-invalid={Boolean(errors.email)}
-                aria-describedby={errors.email ? "setup-email-error" : undefined}
+                aria-invalid={field.invalid}
+                aria-describedby={field.describedBy}
                 required
               />
             </div>
-            <FieldError id="setup-email-error" message={errors.email} />
-          </div>
+              </>
+            )}
+          </FormField>
 
-          <div className="grid gap-2">
-            <Label htmlFor="password">{t("auth.password")}</Label>
+          <FormField id="password" label={t("auth.password")} error={errors.password} errorId="setup-password-error">
+            {(field) => (
+              <>
             <div className="relative">
               <Lock className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={passwordInputRef}
-                id="password"
+                id={field.id}
                 name="password"
                 type="password"
                 minLength={8}
@@ -177,21 +177,23 @@ export default function SetupPage() {
                 className="pl-10"
                 autoComplete="new-password"
                 enterKeyHint="next"
-                aria-invalid={Boolean(errors.password)}
-                aria-describedby={errors.password ? "setup-password-error" : undefined}
+                aria-invalid={field.invalid}
+                aria-describedby={field.describedBy}
                 required
               />
             </div>
-            <FieldError id="setup-password-error" message={errors.password} />
-          </div>
+              </>
+            )}
+          </FormField>
 
-          <div className="grid gap-2">
-            <Label htmlFor="name">{t("setup.displayName")}</Label>
+          <FormField id="name" label={t("setup.displayName")} error={errors.name} errorId="setup-name-error">
+            {(field) => (
+              <>
             <div className="relative">
               <UserRound className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 ref={nameInputRef}
-                id="name"
+                id={field.id}
                 name="name"
                 value={name}
                 onChange={(e) => {
@@ -202,13 +204,14 @@ export default function SetupPage() {
                 autoComplete="name"
                 enterKeyHint="done"
                 spellCheck={false}
-                aria-invalid={Boolean(errors.name)}
-                aria-describedby={errors.name ? "setup-name-error" : undefined}
+                aria-invalid={field.invalid}
+                aria-describedby={field.describedBy}
                 required
               />
             </div>
-            <FieldError id="setup-name-error" message={errors.name} />
-          </div>
+              </>
+            )}
+          </FormField>
 
           <div className="pt-3">
             <Button type="submit" className="w-full" disabled={isSubmitting || isSetupStatusLoading}>

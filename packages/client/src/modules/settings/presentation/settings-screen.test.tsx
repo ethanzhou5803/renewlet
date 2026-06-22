@@ -1,5 +1,4 @@
-// SettingsScreen 测试保护设置页分区装配和 Cloudflare/Docker 差异入口，不验证普通控件样式。
-import { useState } from "react";
+// SettingsScreen 测试保护设置页分区装配、H5 布局契约和 Cloudflare/Docker 差异入口，不验证普通控件细节样式。
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -9,63 +8,15 @@ import {
   WEBHOOK_HEADERS_PLACEHOLDER,
   WEBHOOK_PAYLOAD_PLACEHOLDER,
 } from "@/types/subscription";
-import { NotificationChannelConfigPanel } from "./notification-channel-config-panel";
 import {
   createControllerState,
   createUploadedAssetsManagerState,
   mocks,
   renderSettingsScreen,
+  SETTINGS_SECTION_IDS,
+  StatefulEmailNotificationPanel,
+  useStatefulMonthlyBudgetController,
 } from "./settings-screen.test-utils";
-
-function StatefulEmailNotificationPanel({ initialPort = "" }: { initialPort?: string }) {
-  const [settings, setSettings] = useState({
-    ...DEFAULT_SETTINGS,
-    enabledChannels: ["email" as const],
-    smtpHost: "smtp.example.com",
-    smtpPort: initialPort,
-    recipientEmail: "alice@example.com",
-  });
-
-  return (
-    <NotificationChannelConfigPanel
-      channel="email"
-      settings={settings}
-      enabled
-      updateSetting={(key, value) => setSettings((previous) => ({ ...previous, [key]: value }))}
-      testingChannel={null}
-      onTest={vi.fn()}
-    />
-  );
-}
-
-function useStatefulMonthlyBudgetController(initialBudget = 10000) {
-  const [monthlyBudgetInput, setMonthlyBudgetInput] = useState(String(initialBudget));
-  const [monthlyBudget, setMonthlyBudget] = useState(initialBudget);
-  const [monthlyBudgetError, setMonthlyBudgetError] = useState<string | null>(null);
-
-  return {
-    ...createControllerState({
-      settings: { monthlyBudget },
-      hasUnsavedChanges: monthlyBudgetInput !== String(monthlyBudget) || Boolean(monthlyBudgetError),
-    }),
-    monthlyBudgetInput,
-    monthlyBudgetError,
-    handleMonthlyBudgetInputChange: (value: string) => {
-      setMonthlyBudgetInput(value);
-      if (!value.trim()) {
-        setMonthlyBudgetError("预算金额无效");
-        return;
-      }
-      const parsed = Number(value);
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        setMonthlyBudgetError("预算金额无效");
-        return;
-      }
-      setMonthlyBudgetError(null);
-      setMonthlyBudget(parsed);
-    },
-  };
-}
 
 describe("SettingsScreen SMTP email settings", () => {
   beforeEach(() => {
@@ -111,10 +62,17 @@ describe("SettingsScreen SMTP email settings", () => {
   it("disables external integration controls in demo mode while keeping ordinary settings editable", () => {
     mocks.useSettingsFormController.mockReturnValue(createControllerState({
       externalIntegrationsDisabled: true,
+      sensitiveAccountActionsDisabled: true,
+      sensitiveAccountActionsDemoDisabled: true,
     }));
     renderSettingsScreen();
 
     expect(screen.getByRole("button", { name: "修改密码" })).toBeDisabled();
+    expect(screen.getByText("演示模式仅供浏览，不能修改身份验证器或通行密钥。")).toBeInTheDocument();
+    for (const button of screen.getAllByRole("button", { name: /身份验证器/ })) {
+      expect(button).toBeDisabled();
+    }
+    expect(screen.getByRole("button", { name: "管理通行密钥" })).toBeDisabled();
     expect(screen.getByLabelText("SMTP 服务器")).toBeDisabled();
     expect(screen.getByLabelText("SMTP 端口")).toBeDisabled();
     expect(screen.getByLabelText("收件人邮箱")).toBeDisabled();
@@ -729,6 +687,40 @@ describe("SettingsScreen SMTP email settings", () => {
     expect(screen.queryByText("有未保存更改")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "保存更改" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "放弃更改" })).not.toBeInTheDocument();
+  });
+
+  it("uses the unified settings layout contract without horizontal gutter workarounds", () => {
+    const { container } = renderSettingsScreen();
+
+    const pageLayout = screen.getByTestId("settings-page-layout");
+    const content = screen.getByTestId("settings-section-content");
+    expect(screen.getByTestId("settings-main")).toHaveClass("flex-1");
+    expect(pageLayout).toHaveClass("grid", "min-w-0", "gap-6", "lg:gap-8", "lg:grid-cols-[14rem_minmax(0,1fr)]");
+    expect(pageLayout.className).toContain("[--settings-mobile-header-offset:calc(8.25rem+env(safe-area-inset-top))]");
+    expect(pageLayout.className).toContain("[--settings-desktop-sticky-top:7rem]");
+    expect(pageLayout.className).toContain("[--settings-desktop-section-scroll-offset:var(--settings-desktop-sticky-top)]");
+    expect(pageLayout.className).toContain("[--settings-section-scroll-offset:calc(var(--settings-mobile-header-offset)+var(--settings-mobile-sticky-gap)+var(--settings-mobile-header-height)+0.75rem)]");
+    expect(pageLayout.className).toContain("lg:[--settings-section-scroll-offset:var(--settings-desktop-section-scroll-offset)]");
+    expect(content).toHaveClass("grid", "min-w-0", "gap-6", "lg:gap-8");
+    expect(content).not.toHaveClass("lg:overflow-y-auto");
+    expect(content.querySelector(".-mx-4")).toBeNull();
+    expect(content.querySelector(".overflow-x-auto")).toBeNull();
+
+    SETTINGS_SECTION_IDS.forEach((id) => {
+      const section = container.querySelector(`section#${id}`);
+      expect(section).toHaveClass(
+        "min-w-0",
+        "w-full",
+        "rounded-xl",
+        "border",
+        "bg-card",
+        "p-4",
+        "sm:p-6",
+        "scroll-mt-[var(--settings-section-scroll-offset)]",
+      );
+      expect(section).not.toHaveClass("lg:scroll-mt-24");
+      expect(section).not.toHaveClass("p-6");
+    });
   });
 
   it("shows discard and save actions only when there are unsaved changes", async () => {

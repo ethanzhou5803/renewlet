@@ -4,7 +4,7 @@ package main
 //
 // 架构位置：
 //   - 公共 route 暴露 health/setup/password-reset 状态。
-//   - 认证 route 复用 PocketBase session，并把请求体交给严格 decoder 和命名 request struct。
+//   - 认证 route 只签发 Renewlet 产品 session，并把请求体交给严格 decoder 和命名 request struct。
 //   - route 返回的 response struct 是前端 Zod schema 的运行时契约。
 //
 // 请求流转：
@@ -16,7 +16,6 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/pocketbase/pocketbase/apis"
 	"github.com/pocketbase/pocketbase/core"
 	"github.com/pocketbase/pocketbase/tools/router"
 )
@@ -50,6 +49,12 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	})
 	router.GET("/api/public/status/{token}", func(e *core.RequestEvent) error { return handlePublicStatusRead(app, e) })
 	router.GET("/api/public/status/{token}/assets/{assetId}", func(e *core.RequestEvent) error { return handlePublicStatusAssetRead(app, e) })
+	router.GET("/api/public/v1/me", func(e *core.RequestEvent) error { return handlePublicAPIMe(app, e) })
+	router.GET("/api/public/v1/subscriptions", func(e *core.RequestEvent) error { return handlePublicAPISubscriptionsList(app, e) })
+	router.GET("/api/public/v1/subscriptions/{id}", func(e *core.RequestEvent) error { return handlePublicAPISubscriptionDetail(app, e) })
+	router.GET("/api/public/v1/status", func(e *core.RequestEvent) error { return handlePublicAPIStatus(app, e) })
+	router.GET("/api/public/v1/due", func(e *core.RequestEvent) error { return handlePublicAPIDue(app, e) })
+	router.POST("/api/telegram/webhook/{bindingId}", func(e *core.RequestEvent) error { return handleTelegramWebhook(app, e) })
 	router.GET("/calendar/renewals.ics", func(e *core.RequestEvent) error { return handleCalendarFeedICS(app, e) })
 	router.GET("/api/cron/notifications", func(e *core.RequestEvent) error { return handleNotificationCron(app, e) })
 	router.POST("/api/app/setup", func(e *core.RequestEvent) error {
@@ -65,7 +70,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return e.BadRequestError(validationErrorMessage(locale, "common.invalidRequestBody", err), err)
 		}
-		if err := createInitialAdmin(app, body.Name, body.Email, body.Password); err != nil {
+		if err := createInitialAdmin(app, body.Name, body.Email, body.Password, locale); err != nil {
 			if errors.Is(err, errSetupAlreadyInitialized) {
 				return e.ForbiddenError(serverText(locale, "auth.setupAlreadyInitialized"), nil)
 			}
@@ -74,7 +79,18 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		return e.JSON(http.StatusCreated, newOKResponse())
 	})
 
-	admin := router.Group("/api/app/admin").Bind(apis.RequireAuth("users")).BindFunc(requireAdmin)
+	router.POST("/api/app/auth/login", func(e *core.RequestEvent) error { return handleAuthLogin(app, e) })
+	router.GET("/api/app/auth/session", func(e *core.RequestEvent) error { return handleAuthSession(app, e) })
+	router.POST("/api/app/auth/logout", func(e *core.RequestEvent) error { return handleAuthLogout(app, e) })
+	router.POST("/api/app/auth/mfa/verify", func(e *core.RequestEvent) error { return handleMFAVerify(app, e) })
+	router.POST("/api/app/auth/passkeys/authenticate/options", func(e *core.RequestEvent) error {
+		return handlePasskeyAuthenticateOptions(app, e)
+	})
+	router.POST("/api/app/auth/passkeys/authenticate/verify", func(e *core.RequestEvent) error {
+		return handlePasskeyAuthenticateVerify(app, e)
+	})
+
+	admin := router.Group("/api/app/admin").Bind(appAuthMiddleware(app)).BindFunc(requireAdmin)
 	admin.GET("/users", func(e *core.RequestEvent) error {
 		locale := requestLocale(e.Request)
 		users, err := app.FindAllRecords("users")
@@ -86,7 +102,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		})
 		out := make([]userDTO, 0, len(users))
 		for _, user := range users {
-			out = append(out, toUserDTO(user))
+			out = append(out, toUserDTO(app, user))
 		}
 		return e.JSON(http.StatusOK, adminUsersResponse{Users: out})
 	})
@@ -101,7 +117,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		if err != nil {
 			return e.BadRequestError(serverText(locale, "admin.createUserFailed"), err)
 		}
-		return e.JSON(http.StatusCreated, adminUserResponse{User: toUserDTO(user)})
+		return e.JSON(http.StatusCreated, adminUserResponse{User: toUserDTO(app, user)})
 	})
 	admin.PATCH("/users/{id}", func(e *core.RequestEvent) error {
 		locale := requestLocale(e.Request)
@@ -141,6 +157,48 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		}
 		if err := app.Save(user); err != nil {
 			return e.BadRequestError(serverText(locale, "admin.updateUserFailed"), err)
+		}
+		if body.NewPassword != nil || user.GetBool("banned") {
+			// 管理员重置密码或禁用账号后旧产品 session 必须立即失效，不能等前端下次刷新才发现。
+			if err := deleteAppSessionsForUser(app, user.Id); err != nil {
+				return e.InternalServerError(serverText(locale, "common.internalError"), err)
+			}
+		}
+		return e.JSON(http.StatusOK, newOKResponse())
+	})
+	admin.POST("/users/{id}/mfa/reset", func(e *core.RequestEvent) error {
+		locale := requestLocale(e.Request)
+		id := e.Request.PathValue("id")
+		user, err := app.FindRecordById("users", id)
+		if err != nil {
+			return e.NotFoundError(serverText(locale, "auth.userNotFound"), err)
+		}
+		if e.Auth != nil && e.Auth.Id == user.Id {
+			return e.BadRequestError(serverText(locale, "common.invalidRequestParameters"), nil)
+		}
+		if err := demoModePolicy.RejectTargetUserMutation(e, user); err != nil {
+			return err
+		}
+		if err := disableAuthenticatorMFAForUser(app, user.Id); err != nil {
+			return e.InternalServerError(serverText(locale, "common.internalError"), err)
+		}
+		return e.JSON(http.StatusOK, newOKResponse())
+	})
+	admin.POST("/users/{id}/passkeys/reset", func(e *core.RequestEvent) error {
+		locale := requestLocale(e.Request)
+		id := e.Request.PathValue("id")
+		user, err := app.FindRecordById("users", id)
+		if err != nil {
+			return e.NotFoundError(serverText(locale, "auth.userNotFound"), err)
+		}
+		if e.Auth != nil && e.Auth.Id == user.Id {
+			return e.BadRequestError(serverText(locale, "common.invalidRequestParameters"), nil)
+		}
+		if err := demoModePolicy.RejectTargetUserMutation(e, user); err != nil {
+			return err
+		}
+		if err := deletePasskeysForUser(app, user.Id); err != nil {
+			return e.InternalServerError(serverText(locale, "common.internalError"), err)
 		}
 		return e.JSON(http.StatusOK, newOKResponse())
 	})
@@ -215,7 +273,7 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		return handleBuiltInIconIndexProviderRefresh(app, e)
 	})
 
-	auth := router.Group("/api/app").Bind(apis.RequireAuth("users"))
+	auth := router.Group("/api/app").Bind(appAuthMiddleware(app))
 	auth.GET("/system/version", func(e *core.RequestEvent) error { return handleSystemVersion(e) })
 	auth.PUT("/account/password", func(e *core.RequestEvent) error {
 		locale := requestLocale(e.Request)
@@ -233,8 +291,26 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 		if err := app.Save(e.Auth); err != nil {
 			return e.BadRequestError(serverText(locale, "auth.passwordUpdateFailed"), err)
 		}
+		_, currentSession, _ := appAuthRecordByToken(app, bearerTokenFromHeader(e.Request.Header.Get("Authorization")))
+		keepSessionID := ""
+		if currentSession != nil {
+			keepSessionID = currentSession.Id
+		}
+		// 改密后保留当前产品 session，踢掉其它设备；账号安全自助操作会另行续签当前 session 并废弃旧 bearer。
+		if err := deleteAppSessionsForUserExcept(app, e.Auth.Id, keepSessionID); err != nil {
+			return e.InternalServerError(serverText(locale, "common.internalError"), err)
+		}
 		return e.JSON(http.StatusOK, newOKResponse())
 	})
+	auth.GET("/auth/mfa/status", func(e *core.RequestEvent) error { return handleMFAStatus(app, e) })
+	auth.POST("/auth/mfa/totp/setup", func(e *core.RequestEvent) error { return handleMFATOTPSetup(app, e) })
+	auth.POST("/auth/mfa/totp/enable", func(e *core.RequestEvent) error { return handleMFATOTPEnable(app, e) })
+	auth.POST("/auth/mfa/recovery/regenerate", func(e *core.RequestEvent) error { return handleMFARecoveryRegenerate(app, e) })
+	auth.POST("/auth/mfa/disable", func(e *core.RequestEvent) error { return handleMFADisable(app, e) })
+	auth.GET("/auth/passkeys", func(e *core.RequestEvent) error { return handlePasskeys(app, e) })
+	auth.POST("/auth/passkeys/register/options", func(e *core.RequestEvent) error { return handlePasskeyRegisterOptions(app, e) })
+	auth.POST("/auth/passkeys/register/verify", func(e *core.RequestEvent) error { return handlePasskeyRegisterVerify(app, e) })
+	auth.POST("/auth/passkeys/{id}/delete", func(e *core.RequestEvent) error { return handlePasskeyDelete(app, e) })
 	auth.POST("/notifications/test", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleNotificationTest(app, e) }))
 	auth.GET("/notifications/history", func(e *core.RequestEvent) error { return handleNotificationHistory(app, e) })
 	auth.POST("/notifications/run", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleNotificationRun(app, e) }))
@@ -255,6 +331,12 @@ func registerRoutes(app core.App, router *router.Router[*core.RequestEvent]) {
 	auth.POST("/ai/subscriptions/test", func(e *core.RequestEvent) error { return handleAIRecognitionTestConnection(app, e) })
 	auth.POST("/ai/models/list", func(e *core.RequestEvent) error { return handleAIModelsList(app, e) })
 	// 业务数据统一经 Renewlet 产品 API；前端不得再直连 PocketBase collection REST，以免 Docker/Cloudflare 运行面漂移。
+	auth.GET("/api-tokens", func(e *core.RequestEvent) error { return handleAPITokensList(app, e) })
+	auth.POST("/api-tokens", func(e *core.RequestEvent) error { return handleAPITokenCreate(app, e) })
+	auth.DELETE("/api-tokens/{id}", func(e *core.RequestEvent) error { return handleAPITokenDelete(app, e) })
+	auth.GET("/telegram-bot/commands", func(e *core.RequestEvent) error { return handleTelegramBotCommandsStatus(app, e) })
+	auth.POST("/telegram-bot/commands", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleTelegramBotCommandsInstall(app, e) }))
+	auth.DELETE("/telegram-bot/commands", demoModeExternalSideEffectGuard(func(e *core.RequestEvent) error { return handleTelegramBotCommandsDelete(app, e) }))
 	auth.GET("/settings", func(e *core.RequestEvent) error { return handleSettingsRead(app, e) })
 	auth.PUT("/settings", func(e *core.RequestEvent) error { return handleSettingsUpdate(app, e) })
 	auth.GET("/custom-config", func(e *core.RequestEvent) error { return handleCustomConfigRead(app, e) })

@@ -21,6 +21,7 @@ import type { RawErrorResponseDetails } from '@/lib/raw-error-response';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/i18n/I18nProvider';
 import type { MessageKey, MessageParams } from '@/i18n/messages';
+import { getSettingsSectionClassName } from './settings-layout';
 
 interface BuiltInIconIndexController {
   canManage: boolean;
@@ -87,7 +88,7 @@ export function BuiltInIconSourcesSection({ id, className, sources, onChange, ic
   };
 
   return (
-    <section id={id} className={cn("rounded-xl border border-border bg-card p-6", className)}>
+    <section id={id} className={getSettingsSectionClassName(className)}>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 gap-3">
           <ImageIcon className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
@@ -112,7 +113,7 @@ export function BuiltInIconSourcesSection({ id, className, sources, onChange, ic
               {t("settings.builtInIconSourcesConfigure")}
             </Button>
           </DialogTrigger>
-          <DialogContent className="flex min-h-0 max-w-3xl flex-col gap-0 overflow-hidden border-border bg-card p-0">
+          <DialogContent dismissMode="explicit" className="flex min-h-0 max-w-3xl flex-col gap-0 overflow-hidden border-border bg-card p-0">
             <DialogHeader className="border-b border-border px-4 py-5 pr-12 text-left sm:px-6 sm:pr-14">
               <DialogTitle className="flex items-center gap-2">
                 <ImageIcon className="h-5 w-5 text-primary" />

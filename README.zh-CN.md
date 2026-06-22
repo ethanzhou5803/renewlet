@@ -38,11 +38,12 @@ Renewlet 是一个自托管订阅账本，用来记录周期扣费并发送续�
 - 订阅记录：扣费周期、状态、标签、网站、备注、Logo、分类和付款方式。
 - 续费提醒：按用户 IANA 时区、本地提醒时间、提前天数、重复提醒、发送历史和失败重试生成任务。
 - 通知渠道：Telegram、Notifyx、Webhook、企业微信机器人、SMTP 邮件、Bark 和 Server酱。
+- 账户安全：身份验证器验证码、一次性恢复码和通行密钥登录。
 - 支出统计：月/年成本折算、预算使用、分类图表、付款方式图表和停用订阅节省。
 - AI 识别：从账单截图、备忘录、CSV/TSV 或表格文本生成订阅草稿，确认后再导入。
 - 日历订阅：全局私有 ICS Feed 和单个订阅 Feed。
 - 公开订阅状态页：按订阅控制是否公开，并可选择是否展示金额。
-- 数据迁移：导入导出 Renewlet 数据、旧版 Renewlet `subscriptions.json` 和 Wallos 文件。
+- 数据迁移：导入导出 Renewlet 数据，并支持 Wallos 文件迁入。
 - Logo 来源：上传 Logo、图片链接、内置图标来源和 favicon 候选。
 - Docker 部署：React、Go/PocketBase、SQLite 和静态资源运行在同一个容器中。
 - Cloudflare Workers 部署：React 静态资源、Worker API、D1、R2 和 Cron Triggers。
@@ -69,7 +70,7 @@ http://localhost:3000/setup
 生产环境固定到稳定版本：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.1.9"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -77,7 +78,7 @@ docker compose up -d
 如果 Docker Hub 拉取不可用，改用 GHCR：
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.1.9"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.2"
 ```
 
 ## Cloudflare Workers
@@ -96,12 +97,10 @@ RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.1.9"
 tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 ```
 
-如果你是在 2026-06-04 之前部署的 Renewlet，升级前请先打开旧版本的订阅页，通过“导出订阅”保存 `subscriptions.json`；升级后再从“导入数据”导入。这个文件只用于订阅迁移，仍需保留上面的完整备份。
-
 使用 Docker Compose 升级：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.1.9"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f
@@ -197,10 +196,6 @@ Docker/Go 部署在运行时注入，修改环境变量后只需重启 Renewlet�
 ## 贡献
 
 欢迎提交 issue、文档修正、测试或 pull request。较大的变更请先开 issue，说明目标、使用场景和大致方案。
-
-## 友情链接
-
-- [LINUX DO](https://linux.do/)：Renewlet 感谢 LINUX DO 社区对开源项目交流的支持。
 
 ## 许可证
 

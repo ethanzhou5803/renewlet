@@ -20,6 +20,7 @@ import { Header } from '@/components/header';
 import { BackToTopFloatButton } from '@/components/back-to-top-float-button';
 import { ImportDataDialog } from '@/components/import-data-dialog';
 import { Button } from '@/components/ui/button';
+import { FormField } from '@/components/ui/form-field';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { NumericInput } from '@/components/ui/numeric-input';
@@ -59,6 +60,7 @@ import { UploadedIconsSection } from './uploaded-icons-section';
 import { AIRecognitionSettingsSection } from './ai-recognition-settings-section';
 import { CalendarFeedSection } from './calendar-feed-section';
 import { PublicStatusPageSection } from './public-status-page-section';
+import { PublicApiSection } from './public-api-section';
 import { CloudBackupSection } from './cloud-backup-section';
 import { CheckboxSettingRow, LoadingButtonContent } from './settings-shared-controls';
 import { useCloudBackupController } from '../application/use-cloud-backup-controller';
@@ -67,10 +69,14 @@ import {
   DesktopSettingsSectionNav,
   MobileSettingsPageHeader,
   MobileSettingsSectionDrawer,
-  SETTINGS_SECTION_SCROLL_CLASS,
   useSettingsSectionNavigation,
   useUnsavedChangesGuard,
 } from './settings-section-navigation';
+import {
+  SETTINGS_SECTION_FRAME_CLASS,
+  SETTINGS_SECTION_SCROLL_CLASS,
+  settingsLayout,
+} from './settings-layout';
 
 /** 设置页 screen：只负责布局与展示，业务状态由 controller 提供。 */
 export function SettingsScreen() {
@@ -119,9 +125,13 @@ export function SettingsScreen() {
     calendarFeed,
     builtInIconIndex,
     publicStatusPage,
+    publicApi,
+    telegramBotCommands,
     password,
     passwordResetEnabled,
     externalIntegrationsDisabled,
+    sensitiveAccountActionsDisabled,
+    sensitiveAccountActionsDemoDisabled,
   } = useSettingsFormController();
 
   const {
@@ -208,15 +218,15 @@ export function SettingsScreen() {
 
       <main className={cn("flex-1", hasUnsavedChanges && "h5-bottom-bar-space")} data-testid="settings-main">
         <div className="app-main mx-auto max-w-7xl">
-          <div className="grid gap-8 lg:grid-cols-[14rem_minmax(0,1fr)]">
+          <div className={settingsLayout.pageGrid} data-testid="settings-page-layout">
             <aside className="hidden lg:block" data-testid="settings-section-nav-aside">
               <DesktopSettingsSectionNav activeSectionId={activeSectionId} onSectionClick={handleSectionClick} />
             </aside>
 
-            <div className="grid min-w-0 gap-8" data-testid="settings-section-content">
+            <div className={settingsLayout.content} data-testid="settings-section-content">
               <MobileSettingsPageHeader onOpen={() => setMobileSectionNavOpen(true)} />
 
-              <div className="hidden lg:block">
+              <div className={settingsLayout.desktopHeader}>
                 <h1 className="text-2xl font-bold text-foreground">{t("settings.title")}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">{t("settings.subtitle")}</p>
               </div>
@@ -239,11 +249,12 @@ export function SettingsScreen() {
                 setConfirmPassword={setConfirmPassword}
                 isUpdatingPassword={isUpdatingPassword}
                 updatePassword={updatePassword}
-                passwordDisabled={externalIntegrationsDisabled}
+                passwordDisabled={sensitiveAccountActionsDisabled}
+                accountSecurityDemoDisabled={sensitiveAccountActionsDemoDisabled}
               />
 
               {/* 外观设置 */}
-              <section id="settings-appearance" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-appearance" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <div className="flex items-center gap-2 mb-6">
                   <Palette className="h-5 w-5 text-primary" />
                   <h2 className="text-lg font-semibold text-foreground">{t("settings.appearance")}</h2>
@@ -259,7 +270,7 @@ export function SettingsScreen() {
               </section>
 
               {/* 显示设置 */}
-              <section id="settings-display" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-display" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <h2 className="mb-6 text-lg font-semibold text-foreground">{t("settings.display")}</h2>
                 <div className="grid gap-6">
                   <div className="grid gap-2">
@@ -308,43 +319,43 @@ export function SettingsScreen() {
               />
 
               {/* 预算设置 */}
-              <section id="settings-budget" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-budget" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <h2 className="mb-6 text-lg font-semibold text-foreground">{t("settings.budget")}</h2>
                 <div className="grid gap-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="monthlyBudget">{t("settings.monthlyBudget")}</Label>
-                    <div className="flex flex-col gap-2 min-[380px]:flex-row min-[380px]:items-center min-[380px]:gap-3">
-                      <NumericInput
-                        id="monthlyBudget"
-                        name="monthlyBudget"
-                        allowNegative={false}
-                        allowedDecimalSeparators={[".", "。"]}
-                        inputMode="decimal"
-                        enterKeyHint="done"
-                        value={monthlyBudgetInput}
-                        onRawValueChange={handleMonthlyBudgetInputChange}
-                        className="w-full border-border bg-secondary min-[380px]:w-[200px]"
-                        placeholder="1500"
-                        thousandSeparator
-                        aria-invalid={Boolean(monthlyBudgetError)}
-                        aria-describedby={monthlyBudgetError ? "monthlyBudget-error" : undefined}
-                      />
-                      <span className="text-sm text-muted-foreground">
-                        {getCurrencySymbol(settings.defaultCurrency)} {t("settings.perMonth")}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {t("settings.monthlyBudgetHelp")}
-                    </p>
-                    {monthlyBudgetError ? (
-                      <p id="monthlyBudget-error" className="text-xs text-destructive">{monthlyBudgetError}</p>
-                    ) : null}
-                  </div>
+                  <FormField
+                    id="monthlyBudget"
+                    label={t("settings.monthlyBudget")}
+                    description={t("settings.monthlyBudgetHelp")}
+                    error={monthlyBudgetError}
+                  >
+                    {(field) => (
+                      <div className="flex flex-col gap-2 min-[380px]:flex-row min-[380px]:items-center min-[380px]:gap-3">
+                        <NumericInput
+                          id={field.id}
+                          name={field.id}
+                          allowNegative={false}
+                          allowedDecimalSeparators={[".", "。"]}
+                          inputMode="decimal"
+                          enterKeyHint="done"
+                          value={monthlyBudgetInput}
+                          onRawValueChange={handleMonthlyBudgetInputChange}
+                          className="w-full border-border bg-secondary min-[380px]:w-[200px]"
+                          placeholder="1500"
+                          thousandSeparator
+                          aria-invalid={field.invalid}
+                          aria-describedby={field.describedBy}
+                        />
+                        <span className="text-sm text-muted-foreground">
+                          {getCurrencySymbol(settings.defaultCurrency)} {t("settings.perMonth")}
+                        </span>
+                      </div>
+                    )}
+                  </FormField>
                 </div>
               </section>
 
               {/* 数据配置 */}
-              <section id="settings-data-config" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-data-config" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <div className="flex items-center gap-2 mb-4">
                   <Settings2 className="h-5 w-5 text-primary" />
                   <h2 className="text-lg font-semibold text-foreground">{t("settings.dataConfig")}</h2>
@@ -483,8 +494,14 @@ export function SettingsScreen() {
                 onPublicStatusCurrencyChange={(value) => updateSetting("publicStatusCurrency", value as PublicStatusCurrency)}
               />
 
+              <PublicApiSection
+                id="settings-public-api"
+                className={SETTINGS_SECTION_SCROLL_CLASS}
+                controller={publicApi}
+              />
+
               {/* 时区设置 */}
-              <section id="settings-timezone" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-timezone" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <h2 className="mb-6 text-lg font-semibold text-foreground">{t("settings.timezone")}</h2>
                 <div className="grid gap-2">
                   <Label htmlFor="timezone">{t("settings.timezoneSelect")}</Label>
@@ -506,7 +523,7 @@ export function SettingsScreen() {
               </section>
 
               {/* 通知设置 */}
-              <section id="settings-notifications" className={cn("rounded-xl border border-border bg-card p-6", SETTINGS_SECTION_SCROLL_CLASS)}>
+              <section id="settings-notifications" className={SETTINGS_SECTION_FRAME_CLASS}>
                 <h2 className="mb-6 text-lg font-semibold text-foreground">{t("settings.notifications")}</h2>
 
                 <div className="grid gap-6">
@@ -563,6 +580,7 @@ export function SettingsScreen() {
                       testingChannel={testingChannel}
                       onTest={handleTestConnection}
                       disabled={externalIntegrationsDisabled}
+                      telegramBotCommands={telegramBotCommands}
                     />
                   </div>
 
