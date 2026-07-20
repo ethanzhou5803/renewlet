@@ -17,6 +17,7 @@ import {
   type LocalTime,
 } from "../runtime";
 import { aiRecognitionSettingsSchema } from "./ai-recognition";
+import { apiSuccessResponseSchema } from "./api";
 import { exchangeRateProviderSchema } from "./exchange-rates";
 
 const hhmmSchema = z.string().refine(isValidLocalTime, "时间格式必须为 HH:mm").transform((value) => value as LocalTime);
@@ -45,6 +46,13 @@ export const publicStatusCurrencySchema = z.union([
 ]);
 // Telegram 菜单命令描述不支持富文本；这个枚举只控制 sendMessage 正文，默认值在 shared defaults 固定为 plain。
 export const telegramMessageFormatSchema = z.enum(["plain", "html"]);
+export const dingtalkMessageTypeSchema = z.enum(["markdown", "text"]);
+export const DINGTALK_TITLE_TEMPLATE_MAX_LENGTH = 500;
+export const DINGTALK_CONTENT_TEMPLATE_MAX_LENGTH = 20_000;
+const dingtalkTemplateSchema = (maxLength: number) => z.string().refine(
+  (value) => Array.from(value).length <= maxLength,
+  `最多 ${maxLength} 字符`,
+);
 
 const builtInIconSourceSettingSchema = z.object({
   enabled: z.boolean(),
@@ -94,6 +102,12 @@ const appSettingsShape = {
   webhookMethod: z.enum(["GET", "POST"]),
   webhookHeaders: z.string().max(20_000),
   webhookPayload: z.string().max(100_000),
+  dingtalkWebhookUrl: optionalHttpsUrlSchema,
+  dingtalkSecret: z.string().trim().max(512),
+  dingtalkKeyword: z.string().trim().max(100),
+  dingtalkMessageType: dingtalkMessageTypeSchema,
+  dingtalkTitleTemplate: dingtalkTemplateSchema(DINGTALK_TITLE_TEMPLATE_MAX_LENGTH),
+  dingtalkContentTemplate: dingtalkTemplateSchema(DINGTALK_CONTENT_TEMPLATE_MAX_LENGTH),
   wechatWebhookUrl: optionalHttpsUrlSchema,
   wechatMessageType: z.enum(["text", "markdown"]),
   wechatAddModeTag: z.boolean(),
@@ -116,6 +130,10 @@ const appSettingsShape = {
   barkDeviceKey: z.string().trim().max(256),
   barkSilentPush: z.boolean(),
   serverchanSendKey: z.string().trim().max(256),
+  discordWebhookUrl: optionalHttpsUrlSchema,
+  discordBotUsername: z.string().trim().max(80),
+  discordBotAvatarUrl: optionalHttpsUrlSchema,
+  pushplusToken: z.string().trim().max(256),
   aiRecognition: aiRecognitionSettingsSchema,
 };
 
@@ -134,9 +152,10 @@ export type ApiBuiltInIconSourceSettingsPatch = BuiltInIconSourceSettingsPatch;
  */
 export const appSettingsSchema = z.object(appSettingsShape).strict();
 
-export const settingsResponseSchema = z.object({
+export const settingsPayloadSchema = z.object({
   settings: appSettingsSchema,
 }).strict();
+export const settingsResponseSchema = apiSuccessResponseSchema(settingsPayloadSchema);
 
 /**
  * 设置 PATCH 请求允许局部字段，但不允许未知字段。
@@ -148,3 +167,4 @@ export const settingsUpdateBodySchema = z.object({
   builtInIconSources: builtInIconSourcesPatchSchema,
 }).partial().strict();
 export type ApiAppSettings = z.infer<typeof appSettingsSchema>;
+export type SettingsResponse = z.infer<typeof settingsPayloadSchema>;

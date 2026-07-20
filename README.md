@@ -1,7 +1,7 @@
 # Renewlet
 
 <p align="center">
-  <img src="./packages/client/public/logo.svg" alt="Renewlet" width="320">
+  <img src="./apps/web/public/logo.svg" alt="Renewlet" width="320">
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@ It records renewal dates, prices, currencies, categories, payment methods, logos
 
 ## Demo
 
-Try the live demo: <https://renewlet-demo.olyq.org/>
+Try the live demo: <https://demo.renewlet.cc/>
 
 Sign in with `demo@renewlet.local` / `renewlet-demo`. The demo resets regularly, so please do not put real personal data or credentials there.
 
@@ -37,7 +37,7 @@ Sign in with `demo@renewlet.local` / `renewlet-demo`. The demo resets regularly,
 
 - Subscription records with billing cycles, statuses, tags, websites, notes, logos, categories, and payment methods.
 - Reminder jobs based on each user's IANA time zone, local notification time, reminder days, repeat reminders, delivery history, and failed-send retries.
-- Notifications through Telegram, Notifyx, Webhook, WeCom Bot, SMTP email, Bark, and ServerChan.
+- Notifications through Telegram, Notifyx, Webhook, WeCom Bot, DingTalk Bot, SMTP email, Bark, ServerChan, Discord, and PushPlus.
 - Account security with authenticator codes, one-time recovery codes, and passkey sign-in.
 - Monthly and yearly cost normalization, budget usage, category charts, payment-method charts, and inactive-subscription savings.
 - AI recognition for bill screenshots, notes, CSV/TSV, and pasted table text; drafts are reviewed before import.
@@ -70,7 +70,7 @@ The deploy script creates `docker-compose.yml`, `.env`, and `data/`, then writes
 For production, pin a stable image tag:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.91"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -78,7 +78,7 @@ docker compose up -d
 If Docker Hub is unavailable, use GHCR:
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.2"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.91"
 ```
 
 ## Cloudflare Workers
@@ -87,7 +87,7 @@ RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.2"
 
 Use the deploy button for a Cloudflare-managed repository, or follow [Cloudflare Workers deploy](docs/cloudflare-workers-deploy.md) to manage D1, R2, GitHub Actions, and secrets yourself.
 
-Do not click the deploy button again to upgrade. One-click deploy users run `Sync Renewlet Upstream` in the generated repository connected by Cloudflare Builds; manual deploy users update their fork to the latest Renewlet version, then run `Cloudflare Worker`. Cloudflare updates must apply D1 migrations before publishing the Worker.
+Do not click the deploy button again to upgrade. One-click deploy users run `Sync Renewlet Upstream` in the generated repository connected by Cloudflare Builds; manual deploy users update their fork to the latest Renewlet version, then run `Cloudflare Worker`.
 
 ## Upgrade
 
@@ -100,7 +100,7 @@ tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 Upgrade with Docker Compose:
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.91"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f
@@ -128,8 +128,27 @@ Common `.env` values:
 | `RENEWLET_DEMO_MODE` | Docker Demo Mode switch, `false` by default. |
 | `RENEWLET_CUSTOM_HEAD_SCRIPT` | Optional deployer-provided external `<script>` injection. Empty by default; leave unset to inject no external script. |
 | `NOTIFICATION_SCHEDULER_ENABLED` | Built-in notification scheduler switch, `true` by default. |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | Optional Docker/Go upstream HTTP proxy; lowercase variable names are also supported. |
 
 The full Docker environment template is in `.env.example`.
+
+### Docker Upstream Proxy
+
+If your deployment needs a proxy for Telegram, AI providers, GitHub Release checks, built-in icon indexes, WebDAV, or S3-compatible storage, set the standard proxy variables in `.env`:
+
+```env
+HTTP_PROXY="http://host.docker.internal:7890"
+HTTPS_PROXY="http://host.docker.internal:7890"
+NO_PROXY="localhost,127.0.0.1,.local"
+```
+
+These variables affect Docker/Go server-side HTTP(S) upstream requests only. They do not affect SMTP, browser-loaded images, or Cloudflare Worker deployments. Inside the container, `127.0.0.1` / `localhost` points to the container itself; if the proxy runs on the host, use an address reachable from the container and recreate the container after changing `.env`:
+
+```bash
+docker compose up -d --force-recreate
+```
+
+Go also supports the lowercase variable names `http_proxy`, `https_proxy`, and `no_proxy`.
 
 ### Custom Head Script
 

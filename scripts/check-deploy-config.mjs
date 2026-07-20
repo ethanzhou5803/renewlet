@@ -249,6 +249,42 @@ function checkDockerCustomHeadScriptEnv() {
   }
 }
 
+function checkDockerProxyEnv() {
+  const proxyEnvNames = ["HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy"];
+  const docsAndEnvFiles = [
+    ".env.example",
+    "deploy/env.example",
+    "README.md",
+    "README.zh-CN.md",
+  ];
+  const composeFiles = [
+    "docker-compose.yml",
+    "docker-compose.ghcr.yml",
+    "deploy/docker-compose.yml",
+  ];
+
+  // Docker/Go 代理依赖大小写标准 env；文档、env 示例或 compose 漏任一处都会让用户配置静默失效。
+  // Issue #42 只承诺 ProxyFromEnvironment 语义，ALL_PROXY 需要另行设计优先级与 NO_PROXY 行为。
+  for (const relativePath of docsAndEnvFiles) {
+    const content = readFileSync(join(repoRoot, relativePath), "utf8");
+    for (const envName of proxyEnvNames) {
+      if (!content.includes(envName)) {
+        throw new Error(`${relativePath} must document Docker upstream proxy env ${envName}.`);
+      }
+    }
+  }
+
+  for (const relativePath of composeFiles) {
+    const content = readFileSync(join(repoRoot, relativePath), "utf8");
+    for (const envName of proxyEnvNames) {
+      const snippet = `${envName}: \${${envName}:-}`;
+      if (!content.includes(snippet)) {
+        throw new Error(`${relativePath} must pass through Docker upstream proxy env ${envName}.`);
+      }
+    }
+  }
+}
+
 function checkCloudflareDeployMigrationScript() {
   const packageJson = JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8"));
   const deployScript = packageJson.scripts?.deploy;
@@ -276,7 +312,7 @@ function checkCloudflareDeployMigrationScript() {
 }
 
 function checkCloudflareStaticAssetHeadersContract() {
-  const publicHeaders = readFileSync(join(repoRoot, "packages/client/public/_headers"), "utf8");
+  const publicHeaders = readFileSync(join(repoRoot, "apps/web/public/_headers"), "utf8");
   const localHeadersScript = readFileSync(join(repoRoot, "scripts/prepare-cloudflare-local-headers.mjs"), "utf8");
 
   // 生产 Cloudflare HTTPS 入口继续使用强 CSP；只有 ignored 的 dist 文件能被本地 HTTP dev 放宽。
@@ -286,14 +322,14 @@ function checkCloudflareStaticAssetHeadersContract() {
     "upgrade-insecure-requests",
   ]) {
     if (!publicHeaders.includes(snippet)) {
-      throw new Error(`packages/client/public/_headers must keep production CSP snippet: ${snippet}`);
+      throw new Error(`apps/web/public/_headers must keep production CSP snippet: ${snippet}`);
     }
   }
   if (publicHeaders.includes("img-src 'self' data: blob: http: https:")) {
-    throw new Error("packages/client/public/_headers must not use the local HTTP img-src policy.");
+    throw new Error("apps/web/public/_headers must not use the local HTTP img-src policy.");
   }
   for (const snippet of [
-    "packages/client/dist/_headers",
+    "apps/web/dist/_headers",
     "upgrade-insecure-requests",
     "img-src 'self' data: blob: http: https:",
     "--check-production",
@@ -367,7 +403,7 @@ function checkCloudflareDeployButtonVars() {
 }
 
 function checkCloudflareDeployButtonVersionFallback() {
-  const workerSystem = readFileSync(join(repoRoot, "packages/cloudflare/src/system.ts"), "utf8");
+  const workerSystem = readFileSync(join(repoRoot, "apps/worker/src/system.ts"), "utf8");
 
   // Deploy Button 不一定有 CI 版本变量；Worker 缺元信息时必须显示 package stable version，不能再合成 dev 后缀。
   for (const snippet of [
@@ -438,7 +474,7 @@ function checkReleaseBranchWorkflowTriggers() {
     { path: ".github/workflows/build-smoke.yml", name: "Build Smoke" },
   ];
 
-  // Release 分支 push 不跑质量门；required checks 只能绑定 PR 或 tag job，避免被过滤的 workflow 长期 pending。
+  // main/release push 不跑分支质量门；合并前看 PR，发布看 tag，避免稳定版合入后和 Release Publish 重复。
   for (const workflow of workflows) {
     const content = readFileSync(join(repoRoot, workflow.path), "utf8");
     const pullRequestBlock = workflowTriggerBlock(content, "pull_request");
@@ -449,13 +485,27 @@ function checkReleaseBranchWorkflowTriggers() {
         throw new Error(`${workflow.name} pull_request trigger must keep branch snippet: ${snippet.trim()}`);
       }
     }
-    for (const snippet of ["      - dev", "      - main"]) {
+    for (const snippet of ["      - dev"]) {
       if (!pushBlock.includes(snippet)) {
         throw new Error(`${workflow.name} push trigger must keep branch snippet: ${snippet.trim()}`);
       }
     }
-    if (pushBlock.includes("release/")) {
-      throw new Error(`${workflow.name} push trigger must not include release branches; release checks run on PR and tag workflows.`);
+    for (const blockedBranch of ["      - main", "release/"]) {
+      if (pushBlock.includes(blockedBranch)) {
+        throw new Error(`${workflow.name} push trigger must not include ${blockedBranch.trim()}; release checks run on PR and tag workflows.`);
+      }
+    }
+  }
+
+  const releaseWorkflow = readFileSync(join(repoRoot, ".github/workflows/release-publish.yml"), "utf8");
+  for (const snippet of [
+    "Validate stable tag source",
+    "github.repository == 'zhiyingzzhou/renewlet' && steps.version.outputs.is-stable == 'true'",
+    "git fetch origin main:refs/remotes/origin/main",
+    "git merge-base --is-ancestor \"$TAG_SHA\" \"$MAIN_SHA\"",
+  ]) {
+    if (!releaseWorkflow.includes(snippet)) {
+      throw new Error(`release-publish.yml must keep stable tag source guard: ${snippet}`);
     }
   }
 
@@ -501,6 +551,7 @@ checkGeneratedSecrets();
 checkInvalidExistingPBKeyIsRejected();
 checkDockerSelfUpdateLayout();
 checkDockerCustomHeadScriptEnv();
+checkDockerProxyEnv();
 checkCloudflareDeployMigrationScript();
 checkCloudflareStaticAssetHeadersContract();
 checkCloudflareScheduledLocalRoute();

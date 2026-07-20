@@ -1,7 +1,7 @@
 # Renewlet
 
 <p align="center">
-  <img src="./packages/client/public/logo.svg" alt="Renewlet" width="320">
+  <img src="./apps/web/public/logo.svg" alt="Renewlet" width="320">
 </p>
 
 <p align="center">
@@ -25,7 +25,7 @@ Renewlet 是一个自托管订阅账本，用来记录周期扣费并发送续�
 
 ## 在线演示
 
-先试一下：<https://renewlet-demo.olyq.org/>
+先试一下：<https://demo.renewlet.cc/>
 
 使用 `demo@renewlet.local` / `renewlet-demo` 登录。演示站会定期重置，请不要放真实个人信息或真实凭据。
 
@@ -37,7 +37,7 @@ Renewlet 是一个自托管订阅账本，用来记录周期扣费并发送续�
 
 - 订阅记录：扣费周期、状态、标签、网站、备注、Logo、分类和付款方式。
 - 续费提醒：按用户 IANA 时区、本地提醒时间、提前天数、重复提醒、发送历史和失败重试生成任务。
-- 通知渠道：Telegram、Notifyx、Webhook、企业微信机器人、SMTP 邮件、Bark 和 Server酱。
+- 通知渠道：Telegram、Notifyx、Webhook、企业微信机器人、钉钉机器人、SMTP 邮件、Bark、Server酱、Discord 和 PushPlus。
 - 账户安全：身份验证器验证码、一次性恢复码和通行密钥登录。
 - 支出统计：月/年成本折算、预算使用、分类图表、付款方式图表和停用订阅节省。
 - AI 识别：从账单截图、备忘录、CSV/TSV 或表格文本生成订阅草稿，确认后再导入。
@@ -70,7 +70,7 @@ http://localhost:3000/setup
 生产环境固定到稳定版本：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.91"#' .env
 docker compose pull
 docker compose up -d
 ```
@@ -78,7 +78,7 @@ docker compose up -d
 如果 Docker Hub 拉取不可用，改用 GHCR：
 
 ```env
-RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.2"
+RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.91"
 ```
 
 ## Cloudflare Workers
@@ -87,7 +87,7 @@ RENEWLET_IMAGE="ghcr.io/zhiyingzzhou/renewlet:0.2.2"
 
 可以使用部署按钮创建 Cloudflare 管理的仓库；也可以按 [Cloudflare Workers 部署](docs/cloudflare-workers-deploy.zh-CN.md) 自己管理 D1、R2、GitHub Actions 和 secrets。
 
-升级时不要重新点击部署按钮。一键部署用户在 Cloudflare Builds 连接的生成仓库里运行 `Sync Renewlet Upstream`；手动部署用户把自己的 fork 更新到 Renewlet 最新版本后运行 `Cloudflare Worker`。Cloudflare 升级必须先执行 D1 migrations，再发布 Worker。
+升级时不要重新点击部署按钮。一键部署用户在 Cloudflare Builds 连接的生成仓库里运行 `Sync Renewlet Upstream`；手动部署用户把自己的 fork 更新到 Renewlet 最新版本后运行 `Cloudflare Worker`。
 
 ## 升级
 
@@ -100,7 +100,7 @@ tar -czf renewlet-backup-$(date +%F).tgz .env docker-compose.yml data
 使用 Docker Compose 升级：
 
 ```bash
-sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.2"#' .env
+sed -i.bak 's#RENEWLET_IMAGE=.*#RENEWLET_IMAGE="zhiyingzzhou/renewlet:0.2.91"#' .env
 docker compose pull
 docker compose up -d
 docker compose logs -f
@@ -128,8 +128,27 @@ docker compose down
 | `RENEWLET_DEMO_MODE` | Docker Demo Mode 开关，默认 `false`。 |
 | `RENEWLET_CUSTOM_HEAD_SCRIPT` | 可选部署者自备外链 `<script>` 注入。默认留空；留空时不注入任何外部脚本。 |
 | `NOTIFICATION_SCHEDULER_ENABLED` | 内置通知调度器开关，默认 `true`。 |
+| `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | 可选 Docker/Go 上游 HTTP 代理；也支持小写变量名。 |
 
 完整 Docker 环境变量模板见 `.env.example`。
+
+### Docker 上游代理
+
+如果部署环境访问 Telegram、AI provider、GitHub Release、内置图标索引、WebDAV 或 S3 兼容存储需要代理，可以在 `.env` 中配置标准代理变量：
+
+```env
+HTTP_PROXY="http://host.docker.internal:7890"
+HTTPS_PROXY="http://host.docker.internal:7890"
+NO_PROXY="localhost,127.0.0.1,.local"
+```
+
+代理变量只影响 Docker/Go 服务端主动发起的 HTTP(S) 上游请求，不影响 SMTP、浏览器直连图片或 Cloudflare Worker 部署。容器内的 `127.0.0.1` / `localhost` 指向容器自身；如果代理运行在宿主机，请填写容器可访问的宿主机地址，并重建容器让环境变量生效：
+
+```bash
+docker compose up -d --force-recreate
+```
+
+Go 同时支持小写变量名 `http_proxy`、`https_proxy` 和 `no_proxy`。
 
 ### 自定义 Head 脚本
 
